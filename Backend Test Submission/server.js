@@ -5,12 +5,16 @@ const fs = require('fs');
 const path = require('path');
 const { customAlphabet } = require('nanoid');
 const logger = require('../Logging Middleware/logger');
-
+const errorLogger = require('../Logging Middleware/errorLogger');
 const app = express();
+
 app.use(cors());
 app.use(bodyParser.json());
 app.use(logger);
-
+app.use((err, req, res, next) => {
+    errorLogger(err, req);
+    res.status(500).json({ error: err.message });
+});
 const PORT = 5000;
 const nanoid = customAlphabet('1234567890abcdef', 5);
 const filePath = path.join(__dirname, 'data/urls.json');
@@ -57,14 +61,12 @@ app.get('/:shortcode', async (req, res, next) => {
         next(err);
     }
 });
-
-app.use((err, req, res, next) => {
+setInterval(() => {
+    if (!fs.existsSync(filePath)) return;
+    let urls= JSON.parse(fs.readFileSync(filePath));
     const now = new Date();
-    const date = now.toISOString().split('T')[0];
-    const logFilePath = path.join(__dirname, `../server-${date}.log`);
-    const errorEntry = `[${now.toISOString()}] ERROR ${req.method} ${req.url} - ${err.stack}\n`;
-    fs.appendFile(logFilePath, errorEntry, (fsErr) => { if (fsErr) console.error('Error writing log:', fsErr); });
-    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
-});
+    urls = urls.filter(u => new Date(u.expiryDate) > now);
+    fs.writeFileSync(filePath, JSON.stringify(urls, null, 2));
+},5*60*1000);
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
